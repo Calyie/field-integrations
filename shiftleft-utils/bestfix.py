@@ -365,18 +365,38 @@ def find_best_oss_fix(
     reachable_oss_count,
     unreachable_oss_count,
 ):
-    data_found = False
+    rows = get_best_oss_fix(package_cves, reachable_oss_count)
+
     table = Table(
         title=f"""Best OSS Fix Suggestions for {app["name"]}""",
         show_lines=True,
         box=box.DOUBLE_EDGE,
         header_style="bold magenta",
     )
+
     table.add_column("Package")
     table.add_column("Reachable")
     table.add_column("Version", justify="right", max_width=40)
     table.add_column("CVE", max_width=40)
     table.add_column("Fix Version(s)", justify="right", max_width=40, style="cyan")
+
+
+    if len(rows) > 0:
+        for r in rows:
+            table.add_row(
+                r["package"],
+                r["reachability"],
+                r["version"],
+                "\n".join(r["cve_ids"]),
+                "\n".join(r["fix_versions"]),
+            )
+
+        console.print("\n\n")
+        console.print(table)
+
+def get_best_oss_fix(package_cves, reachable_oss_count):
+    rows = []
+
     for purl, cves in package_cves.items():
         fix_version = set()
         cveids = set()
@@ -391,8 +411,6 @@ def find_best_oss_fix(
             group = tmpA[1]
         for cveobj in cves:
             reachability = cveobj.get("reachability")
-            if not data_found:
-                data_found = True
             cve_id = cveobj.get("cve")
             if not cve_id:
                 cve_id = cveobj.get("oss_internal_id")
@@ -435,24 +453,27 @@ def find_best_oss_fix(
         # For long list of fix versions just show the first half
         if len(fix_versions) > 5:
             fix_versions = fix_versions[0 : math.ceil(len(fix_versions) / 2)]
-        table.add_row(
-            package_str,
-            reachability.capitalize() if reachability == "reachable" else "",
-            pversion,
-            "\n".join(cveids),
-            "\n".join(fix_versions),
+
+        rows.append(
+            {
+                "package": package_str,
+                "reachability": reachability.capitalize()
+                if reachability == "reachable"
+                else "",
+                "version": pversion,
+                "cve_ids": cveids,
+                "fix_versions": fix_versions,
+            }
         )
-    if data_found:
-        console.print("\n\n")
-        console.print(table)
 
+    return rows
 
-def troubleshoot_app(
-    client, org_id, app_name, scan, findings, source_dir, annotated_findings
+def get_ideas(
+    client, org_id, app_name, scan, findings, source_dir, annotated_findings, app_language
 ):
     ideas = []
+    perf_based_reco = False
     run_info = get_scan_run(client, org_id, scan, app_name)
-    app_language = scan.get("language", "java")
     summary = run_info.get("summary", {})
 
     environment = summary.get("environment", {})
@@ -584,7 +605,6 @@ def troubleshoot_app(
                 )
     sizes = summary.get("sizes")
     size_based_reco = False
-    perf_based_reco = False
     uploadRequest = summary.get("upload-request", {})
     metadata_artifact = uploadRequest.get("metadata_artifact", [])
     container_sbom_found = False
@@ -625,13 +645,13 @@ def troubleshoot_app(
         if scan_duration_ms > 3 * 60 * 1000:
             size_suggestion = ""
             if int(binsize) > 50000 and app_language == "java":
-                size_suggestion = "Try scanning the jar file containing only the custom code instead of a uber jar or a war file.\nFor apps containing many libraries, please contact Qwiet.AI support for further optimizations ideas."
+                size_suggestion = "Try scanning the jar file containing only the custom code instead of a uber jar or a war file.\nFor apps containing many libraries, please contact Qwiet AI support for further optimizations ideas."
             if files:
                 if app_language in ("js", "ts", "javascript", "typescript"):
                     if "--exclude" not in sl_cmd_str:
                         size_suggestion = "Pass the argument `-- --exclude <path-1>,<path-2>,...` to exclude specified directories during code analysis."
                     else:
-                        size_suggestion = "Ensure the application is not built prior to invoking Qwiet.AI."
+                        size_suggestion = "Ensure the application is not built prior to invoking Qwiet AI."
                 if app_language == "python":
                     size_suggestion = "Pass the argument `-- --ignore-paths [<ignore_path_1>] [<ignore_path_2>]` to ignore specified paths during code analysis."
                 if app_language == "csharp":
@@ -682,7 +702,7 @@ def troubleshoot_app(
                 and not multiple_dep_projects_used
             ):
                 ideas.append(
-                    "Ensure the solution is restored or built successfully prior to invoking Qwiet.AI."
+                    "Ensure the solution is restored or built successfully prior to invoking Qwiet AI."
                 )
                 if ".sln" not in sl_cmd_str:
                     ideas.append(
@@ -691,7 +711,7 @@ def troubleshoot_app(
             if app_language == "python" and len(findings) < 5:
                 if not verbose_used:
                     ideas.append(
-                        "Ensure the project dependencies are installed with `pip install` command prior to invoking Qwiet.AI."
+                        "Ensure the project dependencies are installed with `pip install` command prior to invoking Qwiet AI."
                     )
                 ideas.append(
                     "To include additional python module search paths in the analysis, pass `-- --extra-sys-paths [<path>]`."
@@ -709,7 +729,7 @@ def troubleshoot_app(
             if app_language in ("js", "ts", "javascript", "typescript"):
                 if "ui" in app_name:
                     ideas.append(
-                        "**UI:** Ensure only applications and not UI toolkits are scanned with Qwiet.AI."
+                        "**UI:** Ensure only applications and not UI toolkits are scanned with Qwiet AI."
                     )
     if (
         build_machine
@@ -725,7 +745,7 @@ def troubleshoot_app(
             )
             if app_language == "java":
                 ideas.append(
-                    "Alternatively, to reduce scan time, pass the argument `--no-cpg` (if permitted by your AppSec team), to generate CPG in the Qwiet.AI cloud."
+                    "Alternatively, to reduce scan time, pass the argument `--no-cpg` (if permitted by your AppSec team), to generate CPG in the Qwiet AI cloud."
                 )
         if memory_total and int(memory_total) < 4096:
             ideas.append(
@@ -756,7 +776,7 @@ def troubleshoot_app(
                 if len(filtered_namespaces) > 4:
                     filtered_namespaces = filtered_namespaces[:4]
                 ideas.append(
-                    f"""**SUPPORT:** This app might be using libraries that are not supported yet. Please contact Qwiet.AI support to manually review this app.\nSome namespaces to review: {", ".join(filtered_namespaces)}"""
+                    f"""**SUPPORT:** This app might be using libraries that are not supported yet. Please contact Qwiet AI support to manually review this app.\nSome namespaces to review: {", ".join(filtered_namespaces)}"""
                 )
     if methods and not size_based_reco:
         ios = methods.get("ios", 0)
@@ -767,12 +787,12 @@ def troubleshoot_app(
             if not sources and sinks:
                 library_reco = True
                 ideas.append(
-                    "**APP:** This repo could be a library. Ensure only applications are scanned with Qwiet.AI."
+                    "**APP:** This repo could be a library. Ensure only applications are scanned with Qwiet AI."
                 )
             if ("lib" in app_name or "common" in app_name) and not sinks:
                 library_reco = True
                 ideas.append(
-                    "**APP:** This repo is a library. Ensure only applications are scanned with Qwiet.AI."
+                    "**APP:** This repo is a library. Ensure only applications are scanned with Qwiet AI."
                 )
         if (
             not ios
@@ -785,18 +805,18 @@ def troubleshoot_app(
             if not multiple_dep_projects_used:
                 if not library_reco and metadata_artifact:
                     ideas.append(
-                        "**SUPPORT:** This app might be using libraries that are not supported yet. Please contact Qwiet.AI support to manually review this app."
+                        "**SUPPORT:** This app might be using libraries that are not supported yet. Please contact Qwiet AI support to manually review this app."
                     )
                 elif "lib" not in app_name and metadata_artifact:
                     ideas.append(
-                        "**SUPPORT:** Alternatively, this app might be using private dependencies or third-party libraries that are not supported yet. Please contact Qwiet.AI support to manually review this app."
+                        "**SUPPORT:** Alternatively, this app might be using private dependencies or third-party libraries that are not supported yet. Please contact Qwiet AI support to manually review this app."
                     )
         if total and int(total) < 20:
             ideas.append(f"This is a small app with only {total} methods.")
     token = summary.get("token")
     if token and token.get("name", "") == "Personal Access":
         ideas.append(
-            f"""**TOKEN:** Use a CI integration token to scan apps with Qwiet.AI. Currently scanned with `{token.get("owner")}'s` personal access token."""
+            f"""**TOKEN:** Use a CI integration token to scan apps with Qwiet AI. Currently scanned with `{token.get("owner")}'s` personal access token."""
         )
     if not sca_sbom_found and app_language not in (
         "terraform_hcl",
@@ -808,7 +828,7 @@ def troubleshoot_app(
     ):
         sbom_idea = ""
         if app_language == ("java", "javasrc"):
-            sbom_idea = "Ensure the entire source directory and build tools such as maven, gradle or sbt are available in the build step running Qwiet.AI."
+            sbom_idea = "Ensure the entire source directory and build tools such as maven, gradle or sbt are available in the build step running Qwiet AI."
             if "--oss-project-dir" not in sl_cmd_str:
                 sbom_idea += " Use the argument `--oss-project-dir <source path>` to specify the source directory explicitly."
             if "build" in sl_cmd_str:
@@ -817,13 +837,13 @@ def troubleshoot_app(
                 sbom_idea += "\nTry running the maven command, `mvn org.cyclonedx:cyclonedx-maven-plugin:2.7.2:makeAggregateBom -DoutputName=bom` before sl analyze to troubleshoot further."
                 sbom_idea += "\nIf additional arguments are found to be required for maven, then set those via the environment variable `MVN_ARGS`"
         if app_language in ("js", "ts", "javascript", "typescript", "javascriptsrc"):
-            sbom_idea = "Ensure the lock files such as package-lock.json or yarn.lock or pnpm-lock.yaml are present. If required perform npm or yarn install to generate the lock files prior to invoking Qwiet.AI."
+            sbom_idea = "Ensure the lock files such as package-lock.json or yarn.lock or pnpm-lock.yaml are present. If required perform npm or yarn install to generate the lock files prior to invoking Qwiet AI."
         if app_language in ("python", "pythonsrc"):
-            sbom_idea = "Ensure the lock files such as requirements.txt or Pipfile.lock or Poetry.lock are present. If required run `pip freeze > requirements.txt` to generate a requirements file prior to invoking Qwiet.AI."
+            sbom_idea = "Ensure the lock files such as requirements.txt or Pipfile.lock or Poetry.lock are present. If required run `pip freeze > requirements.txt` to generate a requirements file prior to invoking Qwiet AI."
         if app_language == "go":
             sbom_idea = "Ensure the package manifest files such as go.mod or go.sum or Gopkg.lock are present in the repo."
         if app_language == "csharp":
-            sbom_idea = "Ensure the solution is restored or built successfully prior to invoking Qwiet.AI."
+            sbom_idea = "Ensure the solution is restored or built successfully prior to invoking Qwiet AI."
         if sbom_idea:
             ideas.append(
                 f"""**iSCA:** Software Bill-of-Materials (SBoM) was not generated correctly for this project.\n{sbom_idea}"""
@@ -837,6 +857,9 @@ def troubleshoot_app(
             ideas.append(
                 """**Remediation:** Review this best fix report and create a remediation config to suppress additional findings."""
             )
+    return ideas, perf_based_reco
+
+def troubleshoot_app(app_name, internal_id, app_language, ideas, perf_based_reco):
     if ideas:
         console.print("\n")
         console.print(
@@ -847,7 +870,7 @@ def troubleshoot_app(
             )
         )
         if perf_based_reco:
-            console.print(f"Internal id for this scan: {scan.get('internal_id')}\n")
+            console.print(f"Internal id for this scan: {internal_id}\n")
 
 
 def file_locations_tree(
@@ -1026,9 +1049,574 @@ def print_scan_stats(scan, counts):
             table.add_row(col, num_to_emoji(ratings_counts_dict[col]))
         console.print(table)
 
-
-def find_best_fix(org_id, app, scan, findings, counts, source_dir):
+def process_findings(app, app_language, scan, findings):
+    source_cohorts = defaultdict(dict)
+    sink_cohorts = defaultdict(dict)
+    source_sink_cohorts = defaultdict(dict)
+    package_cves = defaultdict(list)
+    reachable_oss_count = 0
+    unreachable_oss_count = 0
     annotated_findings = []
+    table_rows = {}
+
+    for afinding in findings:
+        # Skip ignored and fixed findings
+        if afinding.get("status") in ("ignore", "ignored", "fixed"):
+            continue
+        category = afinding.get("category")
+        # Ignore Sensitive Data Leaks, Sensitive Data Usage and Log Forging for now.
+        if "Sensitive" in category or "Log" in category:
+            continue
+        files_loc_list = []
+        files_method_list = []
+        files_method_simple_list = []
+        tracked_list = []
+        snippet_list = []
+        source_method = ""
+        sink_method = ""
+        cvss_31_severity_rating = ""
+        cvss_score = ""
+        reachability = ""
+        details = afinding.get("details", {})
+        source_method = details.get("source_method", "")
+        sink_method = details.get("sink_method", "")
+        # Simplify method names
+        if source_method and app_language not in (
+            "js",
+            "javascript",
+            "ts",
+            "typescript",
+        ):
+            source_method = source_method.split(":")[0]
+        if sink_method and app_language not in ("js", "javascript", "ts", "typescript"):
+            sink_method = sink_method.split(":")[0]
+        tags = afinding.get("tags")
+        methods_list = []
+        check_methods = set()
+        http_routes = set()
+        event_routes = set()
+        ptags_set = set()
+        mtags_set = set()
+        package_url = ""
+        cve = ""
+        oss_internal_id = ""
+        if tags:
+            for tag in tags:
+                if tag.get("key") == "cvss_31_severity_rating":
+                    cvss_31_severity_rating = tag.get("value")
+                elif tag.get("key") == "cvss_score":
+                    cvss_score = tag.get("value")
+                elif tag.get("key") == "reachability":
+                    reachability = tag.get("value")
+                elif tag.get("key") == "package_url":
+                    package_url = tag.get("value")
+                elif tag.get("key") == "cve":
+                    cve = tag.get("value")
+                elif tag.get("key") == "oss_internal_id":
+                    oss_internal_id = tag.get("value")
+        # For old scans, details block might be empty.
+        # We go old school and iterate all dataflows
+        dfobj = {}
+        if details.get("dataflow"):
+            dfobj = details.get("dataflow")
+        dataflows = dfobj.get("list", [])
+        for df in dataflows:
+            location = df.get("location", {})
+            file_name = location.get("file_name")
+            method_name = location.get("method_name")
+            # Simplify method names
+            if method_name:
+                method_name = method_name.split(":")[0]
+            short_method_name = location.get("short_method_name")
+            fmt_short_method_name = short_method_name
+            parameter_tags = df.get("parameter_tags", [])
+            ptags = [
+                pt.get("value")
+                for pt in parameter_tags
+                if pt.get("key", "") in (9, 31) and pt.get("value")
+            ]
+            if ptags:
+                ptags_set.update(ptags)
+            # Try hard to find http and event routes
+            if not http_routes:
+                for all_rt in config.all_routes_tags:
+                    if all_rt in ptags:
+                        http_routes.add("*")
+                        break
+            if not event_routes:
+                for all_et in config.all_events_tags:
+                    if all_et in ptags:
+                        event_routes.add("*")
+                        break
+            if file_name == "N/A" or not location.get("line_number"):
+                continue
+            # Skip getter/setter methods in csharp
+            if ".cs" in file_name and (
+                "get_" in short_method_name or "set_" in short_method_name
+            ):
+                continue
+            # Skip vendor and stdlib for go
+            if ".go" in file_name and (
+                file_name.startswith("vendor") or file_name.startswith("/")
+            ):
+                continue
+            # Skip anonymous methods in scala
+            if ".scala" in file_name and short_method_name.startswith("$anon"):
+                continue
+            variableInfo = df.get("variable_info", {})
+            symbol = ""
+            if variableInfo.get("variable"):
+                variableInfo = variableInfo.get("variable")
+            if variableInfo.get("Variable"):
+                variableInfo = variableInfo.get("Variable")
+            # Identify http routes
+            method_tags = df.get("method_tags", [])
+            mtags = [
+                mt.get("value")
+                for mt in method_tags
+                if mt.get("key", "") in ("EXPOSED_METHOD_ROUTE", 30) and mt.get("value")
+            ]
+            route_value = mtags[0] if mtags else None
+            if mtags:
+                mtags_set.update(mtags)
+            if route_value:
+                http_routes.add(route_value)
+            # Look for middlewares, filters that can operate on all routes
+            lower_file_name = file_name.lower()
+            if (
+                not http_routes
+                and "filter" in lower_file_name
+                or "middleware" in lower_file_name
+                or "route" in lower_file_name
+                or "controller" in lower_file_name
+                or "service" in lower_file_name
+            ):
+                http_routes.add("*")
+            if variableInfo:
+                parameter = variableInfo.get("Parameter")
+                if not parameter:
+                    parameter = variableInfo.get("parameter")
+                local = variableInfo.get("Local")
+                member = variableInfo.get("Member")
+                if not member:
+                    member = variableInfo.get("member")
+                if not local:
+                    local = variableInfo.get("local")
+                if parameter and parameter.get("symbol"):
+                    symbol = parameter.get("symbol")
+                if member and member.get("symbol"):
+                    msymbol = member.get("symbol")
+                    if (
+                        "(" in msymbol
+                        or ")" in msymbol
+                        or "{" in msymbol
+                        or " " in msymbol
+                    ):
+                        if msymbol not in snippet_list:
+                            snippet_list.append(msymbol)
+                    else:
+                        symbol = msymbol.split(".")[-1]
+                if local and local.get("symbol"):
+                    symbol = local.get("symbol")
+                if (
+                    symbol
+                    and symbol not in tracked_list
+                    and "____obj" not in symbol
+                    and "_tmp_" not in symbol
+                    and not symbol.endswith("_0")
+                    and not symbol.startswith("$")
+                    and not symbol.endswith("DTO")
+                    and symbol not in ("this", "req", "res", "p1", "env")
+                ):
+                    if "(" in symbol or ")" in symbol or "{" in symbol or " " in symbol:
+                        if symbol not in snippet_list:
+                            snippet_list.append(symbol)
+                    elif ".cs" in location.get("file_name"):
+                        if "Dto" not in symbol and symbol not in tracked_list:
+                            tracked_list.append(symbol)
+                    else:
+                        cleaned_symbol = symbol.replace("val$", "")
+                        # Clean $ suffixed variables in scala
+                        if file_name.endswith(".scala") and "$" in cleaned_symbol:
+                            cleaned_symbol = cleaned_symbol.split("$")[0]
+                        if cleaned_symbol not in tracked_list:
+                            tracked_list.append(cleaned_symbol)
+            if short_method_name and "empty" not in short_method_name:
+                if "$" in short_method_name and app_language in ("java", "javasrc"):
+                    short_method_name = short_method_name.replace("lambda$", "")
+                    short_method_name = short_method_name.split("$")[0]
+                # For JavaScript/TypeScript short method name is mostly anonymous
+                if "anonymous" in short_method_name:
+                    short_method_name = (
+                        method_name.split(":anonymous")[0]
+                        .split("::")[-1]
+                        .split(":")[-1]
+                    )
+                    if short_method_name == "program":
+                        short_method_name = method_name.split("::")[0] + ":program"
+                elif "_callee" in short_method_name:
+                    short_method_name = (
+                        method_name.split(":_callee")[0].split("::")[-1].split(":")[-1]
+                    )
+                methods_list.append(short_method_name)
+                fmt_short_method_name = short_method_name
+                for check_labels in config.check_labels_list:
+                    if check_labels in short_method_name.lower():
+                        check_methods.add(method_name)
+                        fmt_short_method_name = (
+                            f"[dim green]{short_method_name}[/dim green]"
+                        )
+                # Methods that start with is are usually validation methods
+                if re.match(r"^is[_A-Z]", short_method_name):
+                    check_methods.add(method_name)
+            if not source_method:
+                source_method = (
+                    f'{location.get("file_name")}:{location.get("line_number")}'
+                )
+            loc_line = f'{location.get("file_name")}:{location.get("line_number")}'
+            last_tracked = ""
+            if tracked_list:
+                last_tracked = tracked_list[-1]
+            method_line = f'[dim]{location.get("file_name")}:{location.get("line_number")}[/dim]  {fmt_short_method_name}( [bold red]{last_tracked}[/bold red] )'
+            method_simple_line = f'[dim]{location.get("file_name")}  {short_method_name}( [bold red]{last_tracked}[/bold red] )'
+            # Remove erroneous CI prefixes
+            for tci in config.trimmable_ci_paths:
+                loc_line = loc_line.replace(tci, "")
+                method_line = method_line.replace(tci, "")
+            loc_line = unquote(loc_line)
+            method_line = unquote(method_line)
+            if loc_line not in files_loc_list:
+                files_loc_list.append(loc_line)
+            if method_simple_line not in files_method_simple_list:
+                files_method_list.append(method_line)
+                files_method_simple_list.append(method_simple_line)
+        if dataflows and dataflows[-1]:
+            sink = dataflows[-1].get("location", {})
+            if sink and not sink_method:
+                sink_method = f'{sink.get("file_name")}:{sink.get("line_number")}'
+        ###########
+        if afinding.get("type") == "vuln":
+            methods_list = methods_list
+            check_methods = list(check_methods)
+            last_location = ""
+            first_location = ""
+            if files_loc_list:
+                last_location = files_loc_list[-1]
+                first_location = files_loc_list[0]
+            # Ignore html files
+            if "html" in last_location and len(files_loc_list) > 2:
+                last_location = files_loc_list[-2]
+            if first_location and not source_cohorts[category].get(first_location):
+                source_cohorts[category][first_location] = []
+            if last_location and not sink_cohorts[category].get(last_location):
+                sink_cohorts[category][last_location] = []
+            if (
+                first_location
+                and last_location
+                and not source_sink_cohorts[category].get(
+                    f"{first_location}|{last_location}"
+                )
+            ):
+                source_sink_cohorts[category][f"{first_location}|{last_location}"] = []
+            # Identify cohorts
+            if first_location:
+                source_cohorts[category][first_location].append(afinding.get("id"))
+            if last_location:
+                sink_cohorts[category][last_location].append(afinding.get("id"))
+            if first_location and last_location:
+                source_sink_cohorts[category][
+                    f"{first_location}|{last_location}"
+                ].append(afinding.get("id"))
+            tmpA = last_location.split(":")
+            tmpB = first_location.split(":")
+            last_location_lineno = 1
+            first_location_lineno = 1
+            if tmpA[-1]:
+                last_location_lineno = int(tmpA[-1])
+            if len(tmpA) == 2:
+                last_location_fname = tmpA[0]
+            else:
+                last_location_fname = last_location.replace(
+                    f":{last_location_lineno}", ""
+                )
+            if tmpB[-1]:
+                first_location_lineno = int(tmpB[-1])
+            if len(tmpB) == 2:
+                first_location_fname = tmpB[0]
+            else:
+                first_location_fname = first_location.replace(
+                    f":{first_location_lineno}", ""
+                )
+            code_snippet, variable_detected, full_path = get_code(
+                source_dir, app, last_location_fname, last_location_lineno, tracked_list
+            )
+            full_path_prefix = ""
+            if full_path:
+                full_path_prefix = full_path.replace(last_location_fname, "")
+            # Arrive at a best fix
+            best_fix = ""
+            location_suggestion = ""
+            if last_location_fname:
+                location_suggestion = f"- Before or at line {last_location_lineno} in {last_location_fname}"
+            category_suggestion = ""
+            suppressable_finding = False
+            if (
+                first_location_fname != last_location_fname
+                or last_location_lineno - first_location_lineno > 3
+            ):
+                location_suggestion = (
+                    location_suggestion
+                    + f"\n- After line {first_location_lineno} in {first_location_fname}"
+                )
+            http_routes = list(http_routes)
+            event_routes = list(event_routes)
+            source_variable = ""
+            if tracked_list:
+                source_variable = tracked_list[0]
+            if (
+                source_method == sink_method or (not http_routes and not event_routes)
+            ) and "lambda" not in source_method:
+                if not variable_detected and tracked_list:
+                    variable_detected = tracked_list[-1]
+                category_suggestion, suppressable_finding = get_category_suggestion(
+                    category,
+                    variable_detected,
+                    source_method,
+                    sink_method,
+                    ptags_set,
+                    mtags_set,
+                )
+                taint_suggestion = ""
+                if (
+                    not http_routes
+                    and not event_routes
+                    and "lambda" not in source_method
+                    and variable_detected not in ("event", "ctx", "request", "headers")
+                    and source_variable not in ("event", "ctx", "request", "headers")
+                    and app_language not in ("python")
+                    and not last_location_fname.endswith(".scala")
+                ):
+                    taint_suggestion = (
+                        (
+                            "There are no attacker-reachable HTTP routes for this finding."
+                        )
+                        if not suppressable_finding
+                        else ""
+                    )
+                    if not category_suggestion and variable_detected:
+                        taint_suggestion += (
+                            f" **Taint:** Variable `{variable_detected}`."
+                        )
+                elif variable_detected:
+                    taint_suggestion = f"**Taint:** Variable `{variable_detected}`."
+                preface_text = (
+                    "This is likely a security best practices or an informational finding."
+                    if suppressable_finding
+                    else ""
+                )
+                if snippet_list:
+                    preface_text = "This is a security best practices type finding."
+                best_fix = f"""{preface_text}
+{taint_suggestion}
+{category_suggestion}
+
+**Suppression:**\n
+Specify the sink method in your remediation config to suppress this finding.\n
+- {sink_method if "<operator>" not in sink_method else "Parent method of " + sink_method}
+
+"""
+            elif variable_detected:
+                category_suggestion, suppressable_finding = get_category_suggestion(
+                    category,
+                    variable_detected,
+                    source_method,
+                    sink_method,
+                    ptags_set,
+                    mtags_set,
+                )
+                best_fix = f"""**Taint:** Parameter `{variable_detected}` in the method `{methods_list[-1]}`\n
+{category_suggestion if category_suggestion else f"Validate or sanitize the parameter `{variable_detected}` before invoking the sink `{sink_method}`"}
+"""
+            elif tracked_list:
+                # No variable detected but taint list available
+                variable_detected = tracked_list[-1]
+                Parameter_str = "Parameter"
+                if len(tracked_list) > 4:
+                    variable_detected = (
+                        f"{tracked_list[0]}, {tracked_list[-2]} and {tracked_list[-1]}"
+                    )
+                    Parameter_str = "Variables"
+                category_suggestion, suppressable_finding = get_category_suggestion(
+                    category,
+                    variable_detected,
+                    source_method,
+                    sink_method,
+                    ptags_set,
+                    mtags_set,
+                )
+                best_fix = f"""**Taint:** {Parameter_str} `{variable_detected}` in the method `{methods_list[-1]}`\n
+{category_suggestion if category_suggestion else f"Validate or sanitize the {Parameter_str} `{variable_detected}` before invoking the sink `{sink_method}`"}
+"""
+            if check_methods:
+                if (
+                    not variable_detected
+                    and not tracked_list
+                    and not category_suggestion
+                ):
+                    best_fix = f"""Validate or sanitize user provided input before invoking the sink method `{sink_method}`
+"""
+                if not suppressable_finding:
+                    best_fix = (
+                        best_fix
+                        + f"""
+**Remediation suggestions:**\n
+Include these detected CHECK methods in your remediation config to suppress this finding.\n
+- {MD_LIST_MARKER.join(check_methods)}
+"""
+                    )
+            ignorables_list = find_ignorables(
+                app_language, last_location_fname, files_loc_list
+            )
+            ignorables_suggestion = ""
+            if ignorables_list:
+                if app_language == "csharp":
+                    ignorables_suggestion = """To ignore test projects during analysis, pass `-- --ignore-tests` at the end of the `sl analyze` command."""
+                if app_language in ("js", "javascript", "ts", "typescript"):
+                    ignorables_suggestion = """To ignore unit tests, samples and built artefacts during analysis, pass `-- --exclude <path-1>,<path-2>,...` at the end of the `sl analyze` command."""
+                if app_language == "python":
+                    ignorables_suggestion = """To ignore specific directory from analysis, pass `-- --ignore-paths [<ignore_path_1>] [<ignore_path_2>]` at the end of the `sl analyze` command."""
+            # Fallback
+            if not best_fix:
+                if app_language in ("java", "javasrc", "scala", "csharp"):
+                    best_fix = "No fix suggestion available for this finding."
+                else:
+                    best_fix = f"""{"This is likely a security best practices type finding." if app_language in ("js", "python") else "This is an informational finding."}
+
+**Remediation suggestions:**\n
+Specify the sink method in your remediation config to suppress this finding.\n
+- {sink_method}
+
+"""
+            # Show code snippet if available
+            if snippet_list and not code_snippet:
+                code_snippet = snippet_list[-1]
+            # Any files to ignore
+            if ignorables_suggestion:
+                best_fix = (
+                    best_fix
+                    + f"""
+**Scan suggestions:**\n
+{ignorables_suggestion}
+"""
+                )
+            deep_link = f"""https://app.shiftleft.io/apps/{app["id"]}/vulnerabilities?scan={scan.get("id")}&expanded=true&findingId={afinding.get("id")}"""
+            comment_str = "//"
+            if app_language == "python":
+                comment_str = "#"
+            data_found = True
+            fmt_code_snippet = code_snippet
+            if not CI_MODE and code_snippet:
+                fmt_code_snippet = Syntax(
+                    f"{comment_str} {last_location_fname}\n\n" + code_snippet,
+                    app_language,
+                )
+            file_locations_md = ""
+            if CI_MODE:
+                file_locations_md = Markdown(
+                    MD_LIST_MARKER
+                    + MD_LIST_MARKER.join(
+                        [
+                            f"[{fl}]({to_local_path(full_path_prefix, fl)})"
+                            for fl in files_loc_list
+                        ]
+                    )
+                )
+            # elif "win32" in sys.platform and not CI_MODE:
+            #     file_locations_md = "\n\n".join(
+            #         [f"{to_local_path(full_path_prefix, fl)}" for fl in files_loc_list]
+            #     )
+            else:
+                file_locations_md = file_locations_tree(
+                    afinding.get("internal_id"),
+                    afinding.get("category"),
+                    files_loc_list,
+                    files_method_list,
+                    http_routes,
+                    tracked_list,
+                    full_path_prefix,
+                )
+
+            file_locations = {
+                "internal_id" : afinding.get("internal_id"),
+                "category": afinding.get("category"),
+                "files_loc_list": files_loc_list,
+                "files_method_list": files_method_list,
+                "http_routes": http_routes,
+                "tracked_list": tracked_list,
+                "full_path_prefix": full_path_prefix,
+            }
+            
+            afinding_id = afinding.get("id")
+
+            table_rows[afinding_id] = (
+                {
+                    "link": f"""[link={deep_link}]{afinding.get("id")}[/link]""",
+                    "cvss_31_severity_rating": cvss_31_severity_rating,
+                    "category": category,
+                    "file_locations_md": file_locations_md,
+                    "best_fix_markdown": Markdown(best_fix),
+                }
+            )
+
+            annotated_findings.append(
+                {
+                    "id": afinding.get("id"),
+                    "deep_link": deep_link,
+                    "category": category,
+                    "title": afinding.get("title"),
+                    "version_first_seen": afinding.get("version_first_seen"),
+                    "scan_first_seen": afinding.get("scan_first_seen"),
+                    "internal_id": afinding.get("internal_id"),
+                    "cvss_31_severity_rating": cvss_31_severity_rating,
+                    "cvss_score": cvss_score,
+                    "reachability": reachability,
+                    "source_method": source_method,
+                    "sink_method": sink_method,
+                    "last_location": last_location,
+                    "variable_detected": variable_detected,
+                    "tracked_list": "\n".join(tracked_list),
+                    "parameter_tags": "\n".join(list(ptags_set)),
+                    "method_tags": "\n".join(list(mtags_set)),
+                    "check_methods": "\n".join(check_methods),
+                    "code_snippet": code_snippet.replace("\n", "\\n"),
+                    "best_fix": best_fix.replace("\n", "\\n"),
+                    "suppressable_finding": suppressable_finding,
+                    "file_locations": file_locations,
+                }
+            )
+        ###########
+        ###########
+        if afinding.get("type") == "oss_vuln":
+            fix = details.get("fix", "")
+            package_cves[package_url].append(
+                {
+                    "id": afinding.get("id"),
+                    "cve": cve,
+                    "oss_internal_id": oss_internal_id,
+                    "fix": fix,
+                    "cvss_31_severity_rating": cvss_31_severity_rating,
+                    "reachability": reachability,
+                }
+            )
+            if reachability == "reachable":
+                reachable_oss_count += 1
+            else:
+                unreachable_oss_count += 1
+        ###########
+
+    return source_cohorts, sink_cohorts, source_sink_cohorts, package_cves, reachable_oss_count, unreachable_oss_count, annotated_findings, table_rows
+
+def find_best_fix(org_id, app, scan, findings, counts, source_dir, source_cohorts, sink_cohorts, source_sink_cohorts, package_cves, reachable_oss_count, unreachable_oss_count, annotated_findings, table_rows):
     if not findings:
         return annotated_findings
     data_found = False
@@ -1782,8 +2370,14 @@ def export_report(
                     client, org_id, app_id, version, ratings
                 )
                 annotated_findings = find_best_fix(
-                    org_id, app, scan, findings, counts, source_dir
+                    org_id, app, scan, findings, counts, source_dir, source_cohorts, sink_cohorts, source_sink_cohorts, package_cves, reachable_oss_count, unreachable_oss_count, annotated_findings, table_rows
                 )
+
+                oss_findings = get_best_oss_fix(package_cves, reachable_oss_count)
+
+                ideas = []
+                perf_based_reco = False
+                
                 if troubleshoot:
                     if scan:
                         troubleshoot_app(
