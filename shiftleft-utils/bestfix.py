@@ -1856,6 +1856,13 @@ def build_args():
         help="Report for all CVSS 3.1 ratings. Default is critical and high only.",
         default=False,
     )
+    parser.add_argument(
+        "--no-logo",
+        action="store_true",
+        dest="no_logo",
+        help="Do not display the Qwiet AI logo",
+        default=False,
+    )
     return parser.parse_args()
 
 
@@ -1869,13 +1876,17 @@ if __name__ == "__main__":
     org_id = extract_org_id(config.SHIFTLEFT_ACCESS_TOKEN)
     if not org_id:
         console.print(
-            "Ensure the environment varibale SHIFTLEFT_ACCESS_TOKEN is copied exactly as-is from the website"
+            "Ensure the environment varibale SHIFTLEFT_ACCESS_TOKEN is copied exactly as-is from the website...  line 1883 console.print(config.ngsast_logo)"
         )
         sys.exit(1)
 
-    console.print(config.ngsast_logo)
+    
     start_time = time.monotonic_ns()
     args = build_args()
+
+    if not args.no_logo:
+        console.print(config.ngsast_logo)
+    
     app_list = []
     report_file = args.report_file
     # Use the app name in the default file name
