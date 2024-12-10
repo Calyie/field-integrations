@@ -2370,7 +2370,7 @@ def export_report(
                     client, org_id, app_id, version, ratings
                 )
                 annotated_findings = find_best_fix(
-                    org_id, app, scan, findings, counts, source_dir, source_cohorts, sink_cohorts, source_sink_cohorts, package_cves, reachable_oss_count, unreachable_oss_count, annotated_findings, table_rows
+                    org_id, app, scan, findings, counts, source_dir, package_cves, reachable_oss_count, unreachable_oss_count, annotated_findings, table_rows
                 )
 
                 oss_findings = get_best_oss_fix(package_cves, reachable_oss_count)
