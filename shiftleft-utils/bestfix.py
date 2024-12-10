@@ -920,11 +920,7 @@ def num_to_emoji(c):
         return "-"
     return str(c)
 
-
-def print_scan_stats(scan, counts):
-    if not scan or not counts:
-        return
-    message = ""
+def get_stats_counts(scan, counts=[]):
     files_count = 0
     loc_count = 0
     deps_count = 0
@@ -938,9 +934,11 @@ def print_scan_stats(scan, counts):
     owasp_counts_dict = defaultdict(int)
     owasp_empty = True
     ratings_empty = True
+
     stats = scan.get("stats", {})
     if not stats:
-        return
+        return None
+
     if stats.get("data"):
         data = scan.get("stats", {}).get("data")
         for d in data:
@@ -963,52 +961,83 @@ def print_scan_stats(scan, counts):
                 for osd in oss_data:
                     if osd.get("key") == "Dependencies":
                         deps_count = osd.get("count")
-    for c in counts:
-        if c.get("finding_type") == "vuln":
-            if c.get("key") == "cvss_31_severity_rating":
-                ratings_counts_dict[c.get("value")] = c.get("count")
-                ratings_empty = False
-            if c.get("key") == "owasp_2021_category":
-                owasp_counts_dict[c.get("value")] = c.get("count")
-                owasp_empty = False
-            if c.get("key") == "source_method":
-                source_counts_dict[c.get("value")] = c.get("count")
-            if c.get("key") == "sink_method":
-                sink_counts_dict[c.get("value")] = c.get("count")
-        if c.get("finding_type") == "oss_vuln":
-            if c.get("key") == "cvss_31_severity_rating":
-                oss_ratings_counts_dict[c.get("value")] = c.get("count")
-            if c.get("key") == "reachability":
-                if c.get("value") == "unreachable":
-                    oss_unreachable_count = c.get("count")
-                if c.get("value") == "reachable":
-                    oss_reachable_count = c.get("count")
-        if c.get("finding_type") == "container":
-            if c.get("key") == "cvss_31_severity_rating":
-                container_ratings_counts_dict[c.get("value")] = c.get("count")
+    if counts:
+        for c in counts:
+            if c.get("finding_type") == "vuln":
+                if c.get("key") == "cvss_31_severity_rating":
+                    ratings_counts_dict[c.get("value")] = c.get("count")
+                    ratings_empty = False
+                if c.get("key") == "owasp_2021_category":
+                    owasp_counts_dict[c.get("value")] = c.get("count")
+                    owasp_empty = False
+                if c.get("key") == "source_method":
+                    source_counts_dict[c.get("value")] = c.get("count")
+                if c.get("key") == "sink_method":
+                    sink_counts_dict[c.get("value")] = c.get("count")
+            if c.get("finding_type") == "oss_vuln":
+                if c.get("key") == "cvss_31_severity_rating":
+                    oss_ratings_counts_dict[c.get("value")] = c.get("count")
+                if c.get("key") == "reachability":
+                    if c.get("value") == "unreachable":
+                        oss_unreachable_count = c.get("count")
+                    if c.get("value") == "reachable":
+                        oss_reachable_count = c.get("count")
+            if c.get("finding_type") == "container":
+                if c.get("key") == "cvss_31_severity_rating":
+                    container_ratings_counts_dict[c.get("value")] = c.get("count")
     critical_high_count = ratings_counts_dict["critical"] + ratings_counts_dict["high"]
-    message += f"""\nBestfix from Qwiet.AI analyzed scan #{scan["id"]} for the {scan["language"]} app {scan["app"]} on {scan["started_at"].split("T")[0]}."""
-    if files_count:
-        message += f""" {files_count} files were analyzed during this scan"""
-    elif loc_count:
-        message += f""" {loc_count} lines of code were analyzed during this scan"""
-    if critical_high_count:
-        message += (
-            f" resulting in {critical_high_count} critical and high vulnerabilities. "
-        )
-    else:
-        message += ", and no critical or high vulnerabilities were found. "
-    if deps_count:
-        message += f"{deps_count} open-source dependencies were also identified"
-        if oss_reachable_count:
-            message += f" in which {oss_reachable_count} vulnerabilities were found."
+
+    return {
+        "files_count": files_count,
+        "loc_count": loc_count,
+        "deps_count": deps_count,
+        "oss_unreachable_count": oss_unreachable_count,
+        "oss_reachable_count": oss_reachable_count,
+        "ratings_counts_dict": ratings_counts_dict,
+        "oss_ratings_counts_dict": oss_ratings_counts_dict,
+        "container_ratings_counts_dict": container_ratings_counts_dict,
+        "source_counts_dict": source_counts_dict,
+        "sink_counts_dict": sink_counts_dict,
+        "owasp_counts_dict": owasp_counts_dict,
+        "owasp_empty": owasp_empty,
+        "ratings_empty": ratings_empty,
+    }
+
+def get_message(scan, stats_counts):
+    message = f"""Bestfix from Qwiet AI analyzed scan #{scan["id"]} for the {scan["language"]} app {scan["app"]} on {scan["started_at"].split("T")[0]}."""
+
+    if stats_counts != None:
+        if "files_count" in stats_counts:
+            message += f""" {stats_counts['files_count']} files were analyzed during this scan"""
+        elif "loc_count" in stats_counts:
+            message += f""" {stats_counts['loc_count']} lines of code were analyzed during this scan"""
+        if "critical_high_count" in stats_counts:
+            message += (
+                f" resulting in {stats_counts['critical_high_count']} critical and high vulnerabilities. "
+            )
         else:
-            message += "."
-    message += " Use the information in this report to mitigate the open-source and custom code vulnerabilities and to improve the scan performance."
+            message += ", and no critical or high vulnerabilities were found. "
+        if "deps_count" in stats_counts:
+            message += f"{stats_counts['deps_count']} open-source dependencies were also identified"
+            if "oss_reachable_count" in stats_counts:
+                message += f" in which {stats_counts['oss_reachable_count']} vulnerabilities were found."
+            else:
+                message += "."
+        message += " Use the information in this report to mitigate the open-source and custom code vulnerabilities and to improve the scan performance."
+
+    return message
+
+def print_scan_stats(scan, counts):
+    if not scan or not counts:
+        return
+    stats_counts = get_stats_counts(scan, counts)
+    if not stats_counts:
+        return
+    message = get_message(scan, stats_counts)
     console.print("\n")
     console.print(Markdown("## Executive Summary"))
-    console.print(message)
-    if not owasp_empty:
+    console.print("\n" + message)
+    if not "owasp_empty" in stats_counts:
         console.print("\n\n")
         table = Table(
             title=f"""OWASP Summary""",
@@ -1032,9 +1061,9 @@ def print_scan_stats(scan, counts):
             "a09-security-logging-and-monitoring-failures",
             "a10-server-side-request-forgery-(ssrf)",
         ):
-            table.add_row(col, num_to_emoji(owasp_counts_dict[col]))
+            table.add_row(col, num_to_emoji(stats_counts["owasp_counts_dict"][col]))
         console.print(table)
-    if not ratings_empty:
+    if not "ratings_empty" in stats_counts:
         console.print("\n")
         table = Table(
             title=f"""CVSS Ratings Summary""",
@@ -1046,7 +1075,7 @@ def print_scan_stats(scan, counts):
         table.add_column("Rating")
         table.add_column("Count", justify="right", style="cyan")
         for col in ("critical", "high", "medium", "low"):
-            table.add_row(col, num_to_emoji(ratings_counts_dict[col]))
+            table.add_row(col, num_to_emoji(stats_counts["ratings_counts_dict"][col]))
         console.print(table)
 
 def process_findings(app, app_language, scan, findings):
@@ -1638,558 +1667,30 @@ def find_best_fix(org_id, app, scan, findings, counts, source_dir, source_cohort
     )
     # table.add_column("Code Snippet", overflow="fold", min_width=10)
     table.add_column("Comment", overflow="fold")
-    source_cohorts = defaultdict(dict)
-    sink_cohorts = defaultdict(dict)
-    source_sink_cohorts = defaultdict(dict)
-    package_cves = defaultdict(list)
-    app_language = scan.get("language", "java")
-    reachable_oss_count = 0
-    unreachable_oss_count = 0
+
     for afinding in findings:
-        # Skip ignored and fixed findings
-        if afinding.get("status") in ("ignore", "ignored", "fixed"):
-            continue
-        category = afinding.get("category")
-        # Ignore Sensitive Data Leaks, Sensitive Data Usage and Log Forging for now.
-        if "Sensitive" in category or "Log" in category:
-            continue
-        files_loc_list = []
-        files_method_list = []
-        files_method_simple_list = []
-        tracked_list = []
-        snippet_list = []
-        source_method = ""
-        sink_method = ""
-        cvss_31_severity_rating = ""
-        cvss_score = ""
-        reachability = ""
-        details = afinding.get("details", {})
-        source_method = details.get("source_method", "")
-        sink_method = details.get("sink_method", "")
-        # Simplify method names
-        if source_method and app_language not in (
-            "js",
-            "javascript",
-            "ts",
-            "typescript",
-        ):
-            source_method = source_method.split(":")[0]
-        if sink_method and app_language not in ("js", "javascript", "ts", "typescript"):
-            sink_method = sink_method.split(":")[0]
-        tags = afinding.get("tags")
-        methods_list = []
-        check_methods = set()
-        http_routes = set()
-        event_routes = set()
-        ptags_set = set()
-        mtags_set = set()
-        package_url = ""
-        cve = ""
-        oss_internal_id = ""
-        if tags:
-            for tag in tags:
-                if tag.get("key") == "cvss_31_severity_rating":
-                    cvss_31_severity_rating = tag.get("value")
-                elif tag.get("key") == "cvss_score":
-                    cvss_score = tag.get("value")
-                elif tag.get("key") == "reachability":
-                    reachability = tag.get("value")
-                elif tag.get("key") == "package_url":
-                    package_url = tag.get("value")
-                elif tag.get("key") == "cve":
-                    cve = tag.get("value")
-                elif tag.get("key") == "oss_internal_id":
-                    oss_internal_id = tag.get("value")
-        # For old scans, details block might be empty.
-        # We go old school and iterate all dataflows
-        dfobj = {}
-        if details.get("dataflow"):
-            dfobj = details.get("dataflow")
-        dataflows = dfobj.get("list", [])
-        for df in dataflows:
-            location = df.get("location", {})
-            file_name = location.get("file_name")
-            method_name = location.get("method_name")
-            # Simplify method names
-            if method_name:
-                method_name = method_name.split(":")[0]
-            short_method_name = location.get("short_method_name")
-            fmt_short_method_name = short_method_name
-            parameter_tags = df.get("parameter_tags", [])
-            ptags = [
-                pt.get("value")
-                for pt in parameter_tags
-                if pt.get("key", "") in (9, 31) and pt.get("value")
-            ]
-            if ptags:
-                ptags_set.update(ptags)
-            # Try hard to find http and event routes
-            if not http_routes:
-                for all_rt in config.all_routes_tags:
-                    if all_rt in ptags:
-                        http_routes.add("*")
-                        break
-            if not event_routes:
-                for all_et in config.all_events_tags:
-                    if all_et in ptags:
-                        event_routes.add("*")
-                        break
-            if file_name == "N/A" or not location.get("line_number"):
-                continue
-            # Skip getter/setter methods in csharp
-            if ".cs" in file_name and (
-                "get_" in short_method_name or "set_" in short_method_name
-            ):
-                continue
-            # Skip vendor and stdlib for go
-            if ".go" in file_name and (
-                file_name.startswith("vendor") or file_name.startswith("/")
-            ):
-                continue
-            # Skip anonymous methods in scala
-            if ".scala" in file_name and short_method_name.startswith("$anon"):
-                continue
-            variableInfo = df.get("variable_info", {})
-            symbol = ""
-            if variableInfo.get("variable"):
-                variableInfo = variableInfo.get("variable")
-            if variableInfo.get("Variable"):
-                variableInfo = variableInfo.get("Variable")
-            # Identify http routes
-            method_tags = df.get("method_tags", [])
-            mtags = [
-                mt.get("value")
-                for mt in method_tags
-                if mt.get("key", "") in ("EXPOSED_METHOD_ROUTE", 30) and mt.get("value")
-            ]
-            route_value = mtags[0] if mtags else None
-            if mtags:
-                mtags_set.update(mtags)
-            if route_value:
-                http_routes.add(route_value)
-            # Look for middlewares, filters that can operate on all routes
-            lower_file_name = file_name.lower()
-            if (
-                not http_routes
-                and "filter" in lower_file_name
-                or "middleware" in lower_file_name
-                or "route" in lower_file_name
-                or "controller" in lower_file_name
-                or "service" in lower_file_name
-            ):
-                http_routes.add("*")
-            if variableInfo:
-                parameter = variableInfo.get("Parameter")
-                if not parameter:
-                    parameter = variableInfo.get("parameter")
-                local = variableInfo.get("Local")
-                member = variableInfo.get("Member")
-                if not member:
-                    member = variableInfo.get("member")
-                if not local:
-                    local = variableInfo.get("local")
-                if parameter and parameter.get("symbol"):
-                    symbol = parameter.get("symbol")
-                if member and member.get("symbol"):
-                    msymbol = member.get("symbol")
-                    if (
-                        "(" in msymbol
-                        or ")" in msymbol
-                        or "{" in msymbol
-                        or " " in msymbol
-                    ):
-                        if msymbol not in snippet_list:
-                            snippet_list.append(msymbol)
-                    else:
-                        symbol = msymbol.split(".")[-1]
-                if local and local.get("symbol"):
-                    symbol = local.get("symbol")
-                if (
-                    symbol
-                    and symbol not in tracked_list
-                    and "____obj" not in symbol
-                    and "_tmp_" not in symbol
-                    and not symbol.endswith("_0")
-                    and not symbol.startswith("$")
-                    and not symbol.endswith("DTO")
-                    and symbol not in ("this", "req", "res", "p1", "env")
-                ):
-                    if "(" in symbol or ")" in symbol or "{" in symbol or " " in symbol:
-                        if symbol not in snippet_list:
-                            snippet_list.append(symbol)
-                    elif ".cs" in location.get("file_name"):
-                        if "Dto" not in symbol and symbol not in tracked_list:
-                            tracked_list.append(symbol)
-                    else:
-                        cleaned_symbol = symbol.replace("val$", "")
-                        # Clean $ suffixed variables in scala
-                        if file_name.endswith(".scala") and "$" in cleaned_symbol:
-                            cleaned_symbol = cleaned_symbol.split("$")[0]
-                        if cleaned_symbol not in tracked_list:
-                            tracked_list.append(cleaned_symbol)
-            if short_method_name and "empty" not in short_method_name:
-                if "$" in short_method_name and app_language in ("java", "javasrc"):
-                    short_method_name = short_method_name.replace("lambda$", "")
-                    short_method_name = short_method_name.split("$")[0]
-                # For JavaScript/TypeScript short method name is mostly anonymous
-                if "anonymous" in short_method_name:
-                    short_method_name = (
-                        method_name.split(":anonymous")[0]
-                        .split("::")[-1]
-                        .split(":")[-1]
-                    )
-                    if short_method_name == "program":
-                        short_method_name = method_name.split("::")[0] + ":program"
-                elif "_callee" in short_method_name:
-                    short_method_name = (
-                        method_name.split(":_callee")[0].split("::")[-1].split(":")[-1]
-                    )
-                methods_list.append(short_method_name)
-                fmt_short_method_name = short_method_name
-                for check_labels in config.check_labels_list:
-                    if check_labels in short_method_name.lower():
-                        check_methods.add(method_name)
-                        fmt_short_method_name = (
-                            f"[dim green]{short_method_name}[/dim green]"
-                        )
-                # Methods that start with is are usually validation methods
-                if re.match(r"^is[_A-Z]", short_method_name):
-                    check_methods.add(method_name)
-            if not source_method:
-                source_method = (
-                    f'{location.get("file_name")}:{location.get("line_number")}'
-                )
-            loc_line = f'{location.get("file_name")}:{location.get("line_number")}'
-            last_tracked = ""
-            if tracked_list:
-                last_tracked = tracked_list[-1]
-            method_line = f'[dim]{location.get("file_name")}:{location.get("line_number")}[/dim]  {fmt_short_method_name}( [bold red]{last_tracked}[/bold red] )'
-            method_simple_line = f'[dim]{location.get("file_name")}  {short_method_name}( [bold red]{last_tracked}[/bold red] )'
-            # Remove erroneous CI prefixes
-            for tci in config.trimmable_ci_paths:
-                loc_line = loc_line.replace(tci, "")
-                method_line = method_line.replace(tci, "")
-            loc_line = unquote(loc_line)
-            method_line = unquote(method_line)
-            if loc_line not in files_loc_list:
-                files_loc_list.append(loc_line)
-            if method_simple_line not in files_method_simple_list:
-                files_method_list.append(method_line)
-                files_method_simple_list.append(method_simple_line)
-        if dataflows and dataflows[-1]:
-            sink = dataflows[-1].get("location", {})
-            if sink and not sink_method:
-                sink_method = f'{sink.get("file_name")}:{sink.get("line_number")}'
-        ###########
-        if afinding.get("type") == "vuln":
-            methods_list = methods_list
-            check_methods = list(check_methods)
-            last_location = ""
-            first_location = ""
-            if files_loc_list:
-                last_location = files_loc_list[-1]
-                first_location = files_loc_list[0]
-            # Ignore html files
-            if "html" in last_location and len(files_loc_list) > 2:
-                last_location = files_loc_list[-2]
-            if first_location and not source_cohorts[category].get(first_location):
-                source_cohorts[category][first_location] = []
-            if last_location and not sink_cohorts[category].get(last_location):
-                sink_cohorts[category][last_location] = []
-            if (
-                first_location
-                and last_location
-                and not source_sink_cohorts[category].get(
-                    f"{first_location}|{last_location}"
-                )
-            ):
-                source_sink_cohorts[category][f"{first_location}|{last_location}"] = []
-            # Identify cohorts
-            if first_location:
-                source_cohorts[category][first_location].append(afinding.get("id"))
-            if last_location:
-                sink_cohorts[category][last_location].append(afinding.get("id"))
-            if first_location and last_location:
-                source_sink_cohorts[category][
-                    f"{first_location}|{last_location}"
-                ].append(afinding.get("id"))
-            tmpA = last_location.split(":")
-            tmpB = first_location.split(":")
-            last_location_lineno = 1
-            first_location_lineno = 1
-            if tmpA[-1]:
-                last_location_lineno = int(tmpA[-1])
-            if len(tmpA) == 2:
-                last_location_fname = tmpA[0]
-            else:
-                last_location_fname = last_location.replace(
-                    f":{last_location_lineno}", ""
-                )
-            if tmpB[-1]:
-                first_location_lineno = int(tmpB[-1])
-            if len(tmpB) == 2:
-                first_location_fname = tmpB[0]
-            else:
-                first_location_fname = first_location.replace(
-                    f":{first_location_lineno}", ""
-                )
-            code_snippet, variable_detected, full_path = get_code(
-                source_dir, app, last_location_fname, last_location_lineno, tracked_list
-            )
-            full_path_prefix = ""
-            if full_path:
-                full_path_prefix = full_path.replace(last_location_fname, "")
-            # Arrive at a best fix
-            best_fix = ""
-            location_suggestion = ""
-            if last_location_fname:
-                location_suggestion = f"- Before or at line {last_location_lineno} in {last_location_fname}"
-            category_suggestion = ""
-            suppressable_finding = False
-            if (
-                first_location_fname != last_location_fname
-                or last_location_lineno - first_location_lineno > 3
-            ):
-                location_suggestion = (
-                    location_suggestion
-                    + f"\n- After line {first_location_lineno} in {first_location_fname}"
-                )
-            http_routes = list(http_routes)
-            event_routes = list(event_routes)
-            source_variable = ""
-            if tracked_list:
-                source_variable = tracked_list[0]
-            if (
-                source_method == sink_method or (not http_routes and not event_routes)
-            ) and "lambda" not in source_method:
-                if not variable_detected and tracked_list:
-                    variable_detected = tracked_list[-1]
-                category_suggestion, suppressable_finding = get_category_suggestion(
-                    category,
-                    variable_detected,
-                    source_method,
-                    sink_method,
-                    ptags_set,
-                    mtags_set,
-                )
-                taint_suggestion = ""
-                if (
-                    not http_routes
-                    and not event_routes
-                    and "lambda" not in source_method
-                    and variable_detected not in ("event", "ctx", "request", "headers")
-                    and source_variable not in ("event", "ctx", "request", "headers")
-                    and app_language not in ("python")
-                    and not last_location_fname.endswith(".scala")
-                ):
-                    taint_suggestion = (
-                        (
-                            "There are no attacker-reachable HTTP routes for this finding."
-                        )
-                        if not suppressable_finding
-                        else ""
-                    )
-                    if not category_suggestion and variable_detected:
-                        taint_suggestion += (
-                            f" **Taint:** Variable `{variable_detected}`."
-                        )
-                elif variable_detected:
-                    taint_suggestion = f"**Taint:** Variable `{variable_detected}`."
-                preface_text = (
-                    "This is likely a security best practices or an informational finding."
-                    if suppressable_finding
-                    else ""
-                )
-                if snippet_list:
-                    preface_text = "This is a security best practices type finding."
-                best_fix = f"""{preface_text}
-{taint_suggestion}
-{category_suggestion}
+            afinding_id = afinding.get("id")
 
-**Suppression:**\n
-Specify the sink method in your remediation config to suppress this finding.\n
-- {sink_method if "<operator>" not in sink_method else "Parent method of " + sink_method}
+            if afinding_id in table_rows:
+                if data_found == False:
+                    data_found = True
 
-"""
-            elif variable_detected:
-                category_suggestion, suppressable_finding = get_category_suggestion(
-                    category,
-                    variable_detected,
-                    source_method,
-                    sink_method,
-                    ptags_set,
-                    mtags_set,
-                )
-                best_fix = f"""**Taint:** Parameter `{variable_detected}` in the method `{methods_list[-1]}`\n
-{category_suggestion if category_suggestion else f"Validate or sanitize the parameter `{variable_detected}` before invoking the sink `{sink_method}`"}
-"""
-            elif tracked_list:
-                # No variable detected but taint list available
-                variable_detected = tracked_list[-1]
-                Parameter_str = "Parameter"
-                if len(tracked_list) > 4:
-                    variable_detected = (
-                        f"{tracked_list[0]}, {tracked_list[-2]} and {tracked_list[-1]}"
+                if CI_MODE:
+                    table.add_row(
+                        table_rows[afinding_id]["link"],
+                        table_rows[afinding_id]["cvss_31_severity_rating"],
+                        table_rows[afinding_id]["category"],
+                        table_rows[afinding_id]["file_locations_md"],
+                        table_rows[afinding_id]["best_fix_markdown"],
                     )
-                    Parameter_str = "Variables"
-                category_suggestion, suppressable_finding = get_category_suggestion(
-                    category,
-                    variable_detected,
-                    source_method,
-                    sink_method,
-                    ptags_set,
-                    mtags_set,
-                )
-                best_fix = f"""**Taint:** {Parameter_str} `{variable_detected}` in the method `{methods_list[-1]}`\n
-{category_suggestion if category_suggestion else f"Validate or sanitize the {Parameter_str} `{variable_detected}` before invoking the sink `{sink_method}`"}
-"""
-            if check_methods:
-                if (
-                    not variable_detected
-                    and not tracked_list
-                    and not category_suggestion
-                ):
-                    best_fix = f"""Validate or sanitize user provided input before invoking the sink method `{sink_method}`
-"""
-                if not suppressable_finding:
-                    best_fix = (
-                        best_fix
-                        + f"""
-**Remediation suggestions:**\n
-Include these detected CHECK methods in your remediation config to suppress this finding.\n
-- {MD_LIST_MARKER.join(check_methods)}
-"""
-                    )
-            ignorables_list = find_ignorables(
-                app_language, last_location_fname, files_loc_list
-            )
-            ignorables_suggestion = ""
-            if ignorables_list:
-                if app_language == "csharp":
-                    ignorables_suggestion = """To ignore test projects during analysis, pass `-- --ignore-tests` at the end of the `sl analyze` command."""
-                if app_language in ("js", "javascript", "ts", "typescript"):
-                    ignorables_suggestion = """To ignore unit tests, samples and built artefacts during analysis, pass `-- --exclude <path-1>,<path-2>,...` at the end of the `sl analyze` command."""
-                if app_language == "python":
-                    ignorables_suggestion = """To ignore specific directory from analysis, pass `-- --ignore-paths [<ignore_path_1>] [<ignore_path_2>]` at the end of the `sl analyze` command."""
-            # Fallback
-            if not best_fix:
-                if app_language in ("java", "javasrc", "scala", "csharp"):
-                    best_fix = "No fix suggestion available for this finding."
                 else:
-                    best_fix = f"""{"This is likely a security best practices type finding." if app_language in ("js", "python") else "This is an informational finding."}
-
-**Remediation suggestions:**\n
-Specify the sink method in your remediation config to suppress this finding.\n
-- {sink_method}
-
-"""
-            # Show code snippet if available
-            if snippet_list and not code_snippet:
-                code_snippet = snippet_list[-1]
-            # Any files to ignore
-            if ignorables_suggestion:
-                best_fix = (
-                    best_fix
-                    + f"""
-**Scan suggestions:**\n
-{ignorables_suggestion}
-"""
-                )
-            deep_link = f"""https://app.shiftleft.io/apps/{app["id"]}/vulnerabilities?scan={scan.get("id")}&expanded=true&findingId={afinding.get("id")}"""
-            comment_str = "//"
-            if app_language == "python":
-                comment_str = "#"
-            data_found = True
-            fmt_code_snippet = code_snippet
-            if not CI_MODE and code_snippet:
-                fmt_code_snippet = Syntax(
-                    f"{comment_str} {last_location_fname}\n\n" + code_snippet,
-                    app_language,
-                )
-            file_locations_md = ""
-            if CI_MODE:
-                file_locations_md = Markdown(
-                    MD_LIST_MARKER
-                    + MD_LIST_MARKER.join(
-                        [
-                            f"[{fl}]({to_local_path(full_path_prefix, fl)})"
-                            for fl in files_loc_list
-                        ]
+                    table.add_row(
+                        table_rows[afinding_id]["link"],
+                        f"""{'[bold red]' if table_rows[afinding_id]["cvss_31_severity_rating"] == 'critical' else '[yellow]'}{table_rows[afinding_id]["cvss_31_severity_rating"]}""",
+                        table_rows[afinding_id]["file_locations_md"],
+                        table_rows[afinding_id]["best_fix_markdown"],
                     )
-                )
-            # elif "win32" in sys.platform and not CI_MODE:
-            #     file_locations_md = "\n\n".join(
-            #         [f"{to_local_path(full_path_prefix, fl)}" for fl in files_loc_list]
-            #     )
-            else:
-                file_locations_md = file_locations_tree(
-                    afinding.get("internal_id"),
-                    afinding.get("category"),
-                    files_loc_list,
-                    files_method_list,
-                    http_routes,
-                    tracked_list,
-                    full_path_prefix,
-                )
-            if CI_MODE:
-                table.add_row(
-                    f"""[link={deep_link}]{afinding.get("id")}[/link]""",
-                    cvss_31_severity_rating,
-                    category,
-                    file_locations_md,
-                    Markdown(best_fix),
-                )
-            else:
-                table.add_row(
-                    f"""[link={deep_link}]{afinding.get("id")}[/link]""",
-                    f"""{'[bold red]' if cvss_31_severity_rating == 'critical' else '[yellow]'}{cvss_31_severity_rating}""",
-                    file_locations_md,
-                    Markdown(best_fix),
-                )
-            annotated_findings.append(
-                {
-                    "id": afinding.get("id"),
-                    "deep_link": deep_link,
-                    "category": category,
-                    "title": afinding.get("title"),
-                    "version_first_seen": afinding.get("version_first_seen"),
-                    "scan_first_seen": afinding.get("scan_first_seen"),
-                    "internal_id": afinding.get("internal_id"),
-                    "cvss_31_severity_rating": cvss_31_severity_rating,
-                    "cvss_score": cvss_score,
-                    "reachability": reachability,
-                    "source_method": source_method,
-                    "sink_method": sink_method,
-                    "last_location": last_location,
-                    "variable_detected": variable_detected,
-                    "tracked_list": "\n".join(tracked_list),
-                    "parameter_tags": "\n".join(list(ptags_set)),
-                    "method_tags": "\n".join(list(mtags_set)),
-                    "check_methods": "\n".join(check_methods),
-                    "code_snippet": code_snippet.replace("\n", "\\n"),
-                    "best_fix": best_fix.replace("\n", "\\n"),
-                    "suppressable_finding": suppressable_finding,
-                }
-            )
-        ###########
-        ###########
-        if afinding.get("type") == "oss_vuln":
-            fix = details.get("fix", "")
-            package_cves[package_url].append(
-                {
-                    "id": afinding.get("id"),
-                    "cve": cve,
-                    "oss_internal_id": oss_internal_id,
-                    "fix": fix,
-                    "cvss_31_severity_rating": cvss_31_severity_rating,
-                    "reachability": reachability,
-                }
-            )
-            if reachability == "reachable":
-                reachable_oss_count += 1
-            else:
-                unreachable_oss_count += 1
-        ###########
+
     # Executive summary section
     if scan:
         print_scan_stats(scan, counts)
@@ -2225,7 +1726,7 @@ Specify the sink method in your remediation config to suppress this finding.\n
     return annotated_findings
 
 
-def export_csv(app, annotated_findings, report_file):
+def export_csv(annotated_findings, report_file):
     if annotated_findings:
         fieldnames = annotated_findings[0].keys()
         if not os.path.exists(report_file):
@@ -2279,7 +1780,6 @@ def export_json(app, scan, annotated_findings, oss_findings, counts, report_file
             json.dump(data, json_file, indent=4)
     
     console.print(f"JSON exported to {report_file}")
-
 
 def get_all_findings_with_scan(client, org_id, app_name, version, ratings):
     """Method to retrieve all findings"""
@@ -2369,32 +1869,31 @@ def export_report(
                 scan, findings, counts = get_all_findings_with_scan(
                     client, org_id, app_id, version, ratings
                 )
+
+                if scan:
+                    app_language = scan.get("language")
+
+                source_cohorts, sink_cohorts, source_sink_cohorts, package_cves, reachable_oss_count, unreachable_oss_count, annotated_findings, table_rows = process_findings(app, app_language, scan, findings)
+
                 annotated_findings = find_best_fix(
-                    org_id, app, scan, findings, counts, source_dir, package_cves, reachable_oss_count, unreachable_oss_count, annotated_findings, table_rows
+                    org_id, app, scan, findings, counts, source_dir, source_cohorts, sink_cohorts, source_sink_cohorts, package_cves, reachable_oss_count, unreachable_oss_count, annotated_findings, table_rows
                 )
 
                 oss_findings = get_best_oss_fix(package_cves, reachable_oss_count)
 
                 ideas = []
                 perf_based_reco = False
-                
+
                 if troubleshoot:
                     if scan:
-                        troubleshoot_app(
-                            client,
-                            org_id,
-                            app_name,
-                            scan,
-                            findings,
-                            source_dir,
-                            annotated_findings,
-                        )
+                        ideas, perf_based_reco = get_ideas(client, org_id, app_name, scan, findings, source_dir, annotated_findings, app_language)
+                        troubleshoot_app(app_name, scan.get('internal_id'), app_language, ideas, perf_based_reco)
                     else:
                         console.print(
                             f"\nNo scan information found for {app_name}. Please review your build pipeline logs for troubleshooting."
                         )
                 if rformat == "csv":
-                    export_csv([app], annotated_findings, report_file)
+                    export_csv(annotated_findings, report_file)
                 if rformat == "json":
                     export_json(app, scan, annotated_findings, oss_findings, counts, report_file, ideas, perf_based_reco)
                 progress.advance(task)
@@ -2404,7 +1903,7 @@ def build_args():
     """
     Constructs command line arguments for the bestfix script
     """
-    parser = argparse.ArgumentParser(description="Qwiet.AI preZero bestfix")
+    parser = argparse.ArgumentParser(description="Qwiet AI preZero bestfix")
     parser.add_argument(
         "-a",
         "--app",
@@ -2470,17 +1969,16 @@ if __name__ == "__main__":
     org_id = extract_org_id(config.SHIFTLEFT_ACCESS_TOKEN)
     if not org_id:
         console.print(
-            "Ensure the environment varibale SHIFTLEFT_ACCESS_TOKEN is copied exactly as-is from the website...  line 1883 console.print(config.ngsast_logo)"
+            "Ensure the environment varibale SHIFTLEFT_ACCESS_TOKEN is copied exactly as-is from the website"
         )
         sys.exit(1)
 
-    
     start_time = time.monotonic_ns()
     args = build_args()
 
     if not args.no_logo:
         console.print(config.ngsast_logo)
-    
+
     app_list = []
     report_file = args.report_file
     # Use the app name in the default file name
