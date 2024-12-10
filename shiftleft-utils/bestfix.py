@@ -920,7 +920,7 @@ def num_to_emoji(c):
         return "-"
     return str(c)
 
-def get_stats_counts(scan, counts):
+def get_stats_counts(scan, counts=[]):
     files_count = 0
     loc_count = 0
     deps_count = 0
@@ -961,29 +961,30 @@ def get_stats_counts(scan, counts):
                 for osd in oss_data:
                     if osd.get("key") == "Dependencies":
                         deps_count = osd.get("count")
-    for c in counts:
-        if c.get("finding_type") == "vuln":
-            if c.get("key") == "cvss_31_severity_rating":
-                ratings_counts_dict[c.get("value")] = c.get("count")
-                ratings_empty = False
-            if c.get("key") == "owasp_2021_category":
-                owasp_counts_dict[c.get("value")] = c.get("count")
-                owasp_empty = False
-            if c.get("key") == "source_method":
-                source_counts_dict[c.get("value")] = c.get("count")
-            if c.get("key") == "sink_method":
-                sink_counts_dict[c.get("value")] = c.get("count")
-        if c.get("finding_type") == "oss_vuln":
-            if c.get("key") == "cvss_31_severity_rating":
-                oss_ratings_counts_dict[c.get("value")] = c.get("count")
-            if c.get("key") == "reachability":
-                if c.get("value") == "unreachable":
-                    oss_unreachable_count = c.get("count")
-                if c.get("value") == "reachable":
-                    oss_reachable_count = c.get("count")
-        if c.get("finding_type") == "container":
-            if c.get("key") == "cvss_31_severity_rating":
-                container_ratings_counts_dict[c.get("value")] = c.get("count")
+    if counts:
+        for c in counts:
+            if c.get("finding_type") == "vuln":
+                if c.get("key") == "cvss_31_severity_rating":
+                    ratings_counts_dict[c.get("value")] = c.get("count")
+                    ratings_empty = False
+                if c.get("key") == "owasp_2021_category":
+                    owasp_counts_dict[c.get("value")] = c.get("count")
+                    owasp_empty = False
+                if c.get("key") == "source_method":
+                    source_counts_dict[c.get("value")] = c.get("count")
+                if c.get("key") == "sink_method":
+                    sink_counts_dict[c.get("value")] = c.get("count")
+            if c.get("finding_type") == "oss_vuln":
+                if c.get("key") == "cvss_31_severity_rating":
+                    oss_ratings_counts_dict[c.get("value")] = c.get("count")
+                if c.get("key") == "reachability":
+                    if c.get("value") == "unreachable":
+                        oss_unreachable_count = c.get("count")
+                    if c.get("value") == "reachable":
+                        oss_reachable_count = c.get("count")
+            if c.get("finding_type") == "container":
+                if c.get("key") == "cvss_31_severity_rating":
+                    container_ratings_counts_dict[c.get("value")] = c.get("count")
     critical_high_count = ratings_counts_dict["critical"] + ratings_counts_dict["high"]
 
     return {
